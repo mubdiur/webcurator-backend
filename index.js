@@ -97,6 +97,8 @@ async function insertSites(feedid, siteList) {
 
 async function insertFeed(data, uid) {
     await con.connect()
+    var obj = JSON.parse(data)
+    console.log(obj)
     var oneFeed = {
         uid: String(uid),
         title: data.title,
