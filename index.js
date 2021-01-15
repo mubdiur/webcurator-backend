@@ -99,17 +99,16 @@ async function insertSites(feedid, siteList) {
 async function insertFeed(data, uid) {
     await con.connect()
     var oneFeed = {
-        uid: uid,
+        uid: String(uid),
         title: data.title,
         description: data.description,
         notification: false,
         updates: 0
     }
-    var siteList = data.sites
     await con.query("INSERT INTO feeds SET ?", oneFeed, (err, res) => {
         if (err) console.log(err)
         else {
-            insertSites(res.insertId, siteList)
+            insertSites(res.insertId, data.sites)
         }
     })
 }
