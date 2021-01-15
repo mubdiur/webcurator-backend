@@ -53,7 +53,7 @@ app.post('/', async (req, res, next) => {
 
 async function responseHandler(request, uid) {
     switch (request.operation) {
-        case "insertfeed":
+        case "insertFeed":
             await insertFeed(request.data, uid)
             break
         default:
