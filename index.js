@@ -35,7 +35,7 @@ app.post('/', async (req, res, next) => {
             .verifyIdToken(req.body.token)
             .then((decodedToken) => {
                 const uid = decodedToken.uid;
-                res.send(responseHandler(req.body, uid));
+                responseHandler(req.body, uid, res)
             })
             .catch((error) => {
                 console.log(error.message)
@@ -61,13 +61,13 @@ app.post('/', async (req, res, next) => {
  */
 
 
-async function responseHandler(request, uid) {
+async function responseHandler(request, uid, callback) {
     switch (request.operation) {
         case "insertFeed":
-            await insertFeed(request.data, uid)
+            await insertFeed(request.data, uid, callback)
             break
         case "getFeeds":
-            return await getFeeds(uid)
+            return await getFeeds(uid, callback)
         default:
             console.log(request.operation + " did not match any case!")
     }
@@ -75,21 +75,19 @@ async function responseHandler(request, uid) {
 
 
 
-async function getFeeds(uid) {
-    let feeds;
+async function getFeeds(uid, callback) {
     await con.query("SELECT * FROM feeds", (err, res) => {
         if (err) console.log(err)
         else {
-            feeds = res
+            console.log(res)
+            callback.send(res)
         }
     })
-    console.log(feeds)
-    return feeds
 }
 
 
 
-async function insertPaths(siteid, pathList) {
+async function insertPaths(siteid, pathList, callback) {
     pathList.forEach(async path => {
         onePath = {
             siteid: siteid,
@@ -105,7 +103,7 @@ async function insertPaths(siteid, pathList) {
 }
 
 
-async function insertSites(feedid, siteList) {
+async function insertSites(feedid, siteList, callback) {
     siteList.forEach(async site => {
         oneSite = {
             feedid: feedid,
@@ -114,14 +112,14 @@ async function insertSites(feedid, siteList) {
         await con.query("INSERT INTO sites SET?", oneSite, (err, res) => {
             if (err) console.log(err)
             else {
-                insertPaths(res.insertId, site.paths)
+                insertPaths(res.insertId, site.paths, callback)
             }
         })
     })
 }
 
 
-async function insertFeed(data, uid) {
+async function insertFeed(data, uid, callback) {
     await con.connect()
     var obj = JSON.parse(data)
     console.log(obj)
@@ -135,9 +133,10 @@ async function insertFeed(data, uid) {
     await con.query("INSERT INTO feeds SET ?", oneFeed, (err, res) => {
         if (err) console.log(err)
         else {
-            insertSites(res.insertId, obj.sites)
+            insertSites(res.insertId, obj.sites, callback)
         }
     })
+    callback.send("")
 }
 
 
