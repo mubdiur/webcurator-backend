@@ -101,15 +101,15 @@ async function insertFeed(data, uid) {
     console.log(obj)
     var oneFeed = {
         uid: String(uid),
-        title: data.title,
-        description: data.description,
+        title: obj.title,
+        description: obj.description,
         notification: false,
         updates: 0
     }
     await con.query("INSERT INTO feeds SET ?", oneFeed, (err, res) => {
         if (err) console.log(err)
         else {
-            insertSites(res.insertId, data.sites)
+            insertSites(res.insertId, obj.sites)
         }
     })
 }
