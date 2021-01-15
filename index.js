@@ -79,7 +79,6 @@ async function getFeeds(uid, callback) {
     await con.query("SELECT * FROM feeds", (err, res) => {
         if (err) console.log(err)
         else {
-            console.log(res)
             callback.send(res)
         }
     })
@@ -96,7 +95,7 @@ async function insertPaths(siteid, pathList, callback) {
         await con.query("INSERT INTO paths SET?", onePath, (err, res) => {
             if (err) console.log(err)
             else {
-                console.log("success!");
+                //...
             }
         })
     })
@@ -122,7 +121,6 @@ async function insertSites(feedid, siteList, callback) {
 async function insertFeed(data, uid, callback) {
     await con.connect()
     var obj = JSON.parse(data)
-    console.log(obj)
     var oneFeed = {
         uid: String(uid),
         title: obj.title,
