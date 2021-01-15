@@ -49,6 +49,16 @@ app.post('/', async (req, res, next) => {
         });
 })
 
+/**
+ * 
+ * 
+ * 
+ *  Below is the code for providing the response
+ * 
+ * 
+ * 
+ * 
+ */
 
 
 async function responseHandler(request, uid) {
@@ -56,10 +66,26 @@ async function responseHandler(request, uid) {
         case "insertFeed":
             await insertFeed(request.data, uid)
             break
+        case "getFeeds":
+            return await getFeeds(uid)
         default:
+            console.log(request.operation + " did not match any case!")
     }
 }
 
+
+
+async function getFeeds(uid) {
+    let feeds;
+    await con.query("SELECT * FROM feeds", (err, res) => {
+        if (err) console.log(err)
+        else {
+            feeds = res
+        }
+    })
+    console.log(feeds)
+    return feeds
+}
 
 
 
