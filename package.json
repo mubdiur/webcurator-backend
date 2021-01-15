@@ -23,6 +23,7 @@
   "homepage": "https://github.com/mubdiur/webcurator-backend#readme",
   "dependencies": {
     "express": "^4.17.1",
+    "firebase-admin": "^9.4.2",
     "https": "^1.0.0"
   }
 }

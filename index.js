@@ -1,6 +1,17 @@
 const express = require("express")
 const https = require("https")
 const fs = require('fs');
+var admin = require('firebase-admin');
+
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+    databaseURL: "https://webcurator-33fea.firebaseio.com"
+});
+
+
+
+
+
 
 const app = express();
 
@@ -9,12 +20,31 @@ app.use(express.urlencoded({
     extended: true
 })) // for parsing application/x-www-form-urlencoded
 
-
 app.post('/', async (req, res, next) => {
 
     // Verify ID token
-
-    res.send("");
+    if (req.body.token != "") {
+        admin
+            .auth()
+            .verifyIdToken(req.body.token)
+            .then((decodedToken) => {
+                const uid = decodedToken.uid;
+                // ...
+                console.log("success")
+                res.send({
+                    message: "Success"
+                });
+            })
+            .catch((error) => {
+                console.log(error.message)
+                res.send({
+                    message: "invalid token!"
+                });
+            });
+    } else
+        res.send({
+            message: "token cannot be empty!"
+        });
 })
 
 
