@@ -35,8 +35,7 @@ app.post('/', async (req, res, next) => {
             .verifyIdToken(req.body.token)
             .then((decodedToken) => {
                 const uid = decodedToken.uid;
-                var response = await responseHandler(req.body, uid)
-                res.send(response);
+                res.send(responseHandler(req.body, uid));
             })
             .catch((error) => {
                 console.log(error.message)
