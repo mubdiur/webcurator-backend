@@ -4,7 +4,7 @@ const fs = require('fs');
 var admin = require('firebase-admin');
 
 admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
+    credential: admin.credential.applicationDefault(),
     databaseURL: "https://webcurator-33fea.firebaseio.com"
 });
 
