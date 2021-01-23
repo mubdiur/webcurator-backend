@@ -4,7 +4,9 @@ const fs = require('fs');
 var admin = require('firebase-admin');
 var mysql = require('mysql');
 const puppeteer = require("puppeteer");
-var HTMLParser = require('node-html-parser');
+const cheerio = require("cheerio");
+const util = require('util');
+const { finished } = require("stream");
 
 // Prepare puppeteer
 let browserInstance = null
@@ -31,7 +33,9 @@ var con = mysql.createConnection({
     password: "",
     database: 'webcurator'
 });
-con.connect()
+
+
+const query = util.promisify(con.query).bind(con);
 // Prepare the object for express server
 const app = express();
 
@@ -40,7 +44,7 @@ app.use(express.urlencoded({
     extended: true
 })) // for parsing application/x-www-form-urlencoded
 
-app.post('/', async (req, res, next) => {
+app.post('/', (req, res, next) => {
 
     // Verify ID token
     if (req.body.token != "") {
@@ -51,7 +55,10 @@ app.post('/', async (req, res, next) => {
                 // Get the User ID directly from firebase  
                 // based on the client's ID token
                 const uid = decodedToken.uid;
-                databaseOperations(req.body, uid, res)
+                (async () => {
+                    const respose = await databaseOperations(req.body, uid)
+                    res.send(respose)
+                })()
             })
             .catch((error) => {
                 console.log(error.message)
@@ -68,58 +75,30 @@ app.post('/', async (req, res, next) => {
 })
 
 
-
-
-
-/**
- * --------------------------------------------------------------------
- *  Below is the code for DB operations
- * --------------------------------------------------------------------
- */
-
-
-async function databaseOperations(request, uid, callback) {
+async function databaseOperations(request, uid) {
     console.log("ordered operation: " + request.operation)
     switch (request.operation) {
         // ------ 1. FETCH operations ---------- //
         // network 1
         case "getUserFeeds":
-            await getUserFeeds(uid, res => {
-                callback.send(res)
-            })
-            break
+            return await getUserFeeds(uid)
         // network 2
         // if the operation is to get the notification status
         case "getSitesForFeed":
-            await getSitesForFeed(request.feedid, res => {
-                callback.send(res)
-            })
-            break
+            return await getSitesForFeed(request.feedid)
         // network 3
         case "getContentsForFeed":
-            await getContentsForFeed(request.feedid, res => {
-                callback.send(res)
-            })
-            break
+            return await getContentsForFeed(request.feedid)
         // network 4
         case "getUpdateCount":
-            await getUpdateCount(request.feedid, res => {
-                callback.send(res)
-            })
-            break
+            return await getUpdateCount(request.feedid)
         // network 5
         case "getTopicForFeed":
-            await getTopicForFeed(request.feedid, res => {
-                callback.send(res)
-            })
-            break
+            return await getTopicForFeed(request.feedid)
         // network 6
         // if the operation is to get the notification status
         case "getNotificationStatus":
-            await getNotificationStatus(request.feedid, uid, res => {
-                callback.send(res)
-            })
-            break
+            return await getNotificationStatus(request.feedid, uid)
 
 
         // ------ 2. INSERT operations ---------- //
@@ -127,82 +106,302 @@ async function databaseOperations(request, uid, callback) {
         // if the operation is to insert a feed
         // network 7 
         case "insertFeed":
-            await insertFeed(request.feed, uid)
-            callback.send("")
-            break
+            return await insertFeed(request.feed, uid)
         // network 8
         case "insertOneSite":
-            await insertOneSite(request.feedid, request.site)
-            callback.send("")
-            break
+            return await insertOneSite(request.feedid, request.site)
 
         // ------ 3. UPDATE operations ---------- //
         // network 9
         case "setNotification":
-            await setNotification(request.feedid, request.notification)
-            callback.send("")
-            break
+            return await setNotification(request.feedid, request.notification)
         // network 10
         case "modifyFeed":
-            await modifyFeed(request.feedid, request.title, request.description)
-            callback.send("")
-            break
+            return await modifyFeed(request.feedid, request.title, request.description)
+        // network 10.1
+        case "markFeedRead":
+            return await markFeedRead(request.feedid)
+        // network 10.2
+        case "markAllRead":
+            return await markAllRead(uid)
         // ------ 4. DELETE operations ---------- //
         // network 11
         case "deleteSite":
-            await deleteSite(request.siteid)
-            callback.send("")
-            break
+            return await deleteSite(request.siteid)
         // network 12
         case "deleteFeed":
-            await deleteFeed(request.feedid)
-            callback.send("")
-            break
+            return await deleteFeed(request.feedid)
         // ------ DEFAULT operation ---------- //
 
         default:
-            console.log(request.operation + " did not match any case!")
+            return " did not match any case!"
     }
 }
 
-asyncLoop()
-// get the set of contents from database using the siteid as oldSet
-await getContentsForSite(site.id, contents => {
-    contents.forEach(content => {
-        oldSet.add(content.text.toString())
-    })
-})
-// find updatedSet of new contents newSet - oldSet
-oldSet.forEach(item => {
-    newSet.delete(item)
-})
-
-if (newSet.length > 0) {
-    // New updates found!
-
-    // total number of updates += updatedSet.length()
-    await getUpdateCount(site.feedid, count => {
-        setUpdateCount(site.feedid, count + newSet.length)
-    })
-
-    // insert the contents with siteid
-    await insertContents(site.id, newSet)
 
 
+// --------------- DATABASE UNIT FUNCTIONS ---------------------
 
-    // Trigger Notification
+// ----------- get functions -----------------
+// network 1
+async function getUserFeeds(uid) {
+    return await query("SELECT * FROM feeds where uid = ?", [uid])
+}
+// network 2
+async function getSitesForFeed(feedid) {
+    return await query("SELECT * FROM sites where feedid = ?", [feedid])
+}
+async function getPathsForSite(siteid) {
+    return await query("SELECT * FROM paths where siteid = ?", [siteid])
+}
+async function getContentsForSite(siteid) {
+    return await query("SELECT * FROM contents where siteid = ?", [siteid])
+}
+// network 3
+async function getContentsForFeed(feedid) {
+    let setOfContent = new Set()
+    const sites = await getSitesForFeed(feedid)
+
+    for (site of sites) {
+        const contents = await getContentsForSite(site.id)
+        for (content of contents) {
+            setOfContent.add(content)
+        }
+    }
+    return setOfContent
+}
+// network 4
+async function getUpdateCount(feedid) {
+    const res = await query("SELECT updates FROM feeds where id = ?", [feedid])
+    return res[0].updates
+}
+// network 5
+async function getTopicForFeed(feedid) {
+    const res = await query("SELECT name FROM topics where feedid = ?", [feedid])
+    return res[0].name
+}
+async function getOneFeed(feedid) {
+    const res = await query("SELECT * FROM feeds where id = ?", [feedid])
+    return res[0]
+}
+async function getAllFeeds() {
+    return await query("SELECT * FROM feeds")
+}
+// network 6
+async function getNotificationStatus(feedid) {
+    const res = await query("SELECT notification FROM feeds where id = ?", [feedid])
+    return res[0].notification
+}
 
 
 
-    await getOneFeed(site.feedid, async feed => {
-        // get topic for the feed
-        if (feed.notification == 1) {
-            await getTopicForFeed(feed.id, topic => {
+// ----------- insert functions -------------
 
-                var message = {
+async function insertContents(siteid, contents) {
+    var count = 0
+    for (content of contents) {
+        oneContent = {
+            siteid: siteid,
+            text: content,
+            new: 1
+        }
+        await query("INSERT INTO contents SET?", oneContent)
+        count++
+    }
+    return count
+}
+
+
+async function insertPaths(siteid, pathList) {
+    var count = 0
+    for (path of pathList) {
+        onePath = {
+            siteid: siteid,
+            path: path
+        }
+        await query("INSERT INTO paths SET?", onePath)
+        count++
+    }
+    return count
+}
+
+async function insertSites(feedid, siteList) {
+    var count = 0
+    for (site of siteList) {
+        oneSite = {
+            feedid: feedid,
+            url: site.url
+        }
+        const res = await query("INSERT INTO sites SET?", oneSite)
+        await insertPaths(res.insertId, site.paths)
+        count++
+    }
+    return count
+}
+async function insertTopic(uid, feedid) {
+    var topicname = uid.toString() + feedid.toString()
+    var topic = {
+        feedid: feedid,
+        name: topicname
+    }
+    return await query("INSERT INTO topics SET ?", topic)
+}
+// network 7
+async function insertFeed(feed, uid) {
+    const feedObject = JSON.parse(feed)
+    var oneFeed = {
+        uid: String(uid),
+        title: feedObject.title,
+        description: feedObject.description,
+        notification: false,
+        updates: 0
+    }
+    const res = await query("INSERT INTO feeds SET ?", oneFeed)
+    await insertSites(res.insertId, feedObject.sites);
+    await insertTopic(uid, res.insertId);
+    return res
+}
+// network 8
+async function insertOneSite(feedid, site) {
+    const siteObject = JSON.parse(site)
+    oneSite = {
+        feedid: feedid,
+        url: siteObject.url
+    }
+    const res = await query("INSERT INTO sites SET?", oneSite)
+    await insertPaths(res.insertId, siteObject.paths);
+    return res
+}
+
+
+
+// --------------- update/set functions -----------------
+
+
+async function setUpdateCount(feedid, updates) {
+    return await query("UPDATE feeds SET updates = ? where id = ?", [updates, feedid])
+}
+// network 9
+async function setNotification(feedid, value) {
+    return await query("UPDATE feeds SET notification = ? where id = ?", [value, feedid])
+}
+// network 10
+async function modifyFeed(feedid, title, description) {
+    return await query("UPDATE feeds SET title = ?, description = ? where id = ?", [title, description, feedid])
+}
+
+// network 10.1
+async function markFeedRead(feedid) {
+    return await query("UPDATE feeds SET updates = ? where id = ?", [0, feedid])
+}
+
+// network 10.2
+async function markAllRead(uid) {
+    var count = 0
+    const feeds = await getUserFeeds(uid)
+    for (feed of feeds) {
+        await markFeedRead(feed.id)
+        count++
+    }
+    return count
+}
+
+// ---------------- Delete functions -----------------
+
+async function deleteContentsForSite(siteid) {
+    return await query("DELETE from contents where siteid = ?", [siteid])
+}
+// network 11
+async function deleteSite(siteid) {
+    return await query("DELETE from sites where id = ?", [siteid])
+}
+// network 12
+async function deleteFeed(feedid) {
+    return await query("DELETE from feeds where id = ?", [feedid])
+}
+
+
+
+// ------------------ end of database functions ---------------
+
+
+/**
+ * --------------------------------------------------------------------
+ * -----------------  The CURATION part is here -----------------------
+ * --------------------------------------------------------------------
+ */
+
+async function curateContentsFeed(feedid) {
+
+    const page = await getPage()
+
+    // get sites from feedid
+    const sites = await getSitesForFeed(feedid)
+
+    const feedUpdates = new Set()
+    const siteContents = new Set()
+
+    for (site of sites) {
+
+        await page.setCacheEnabled(false)
+        page.goto(site.url).catch(console.dir)
+        await page.waitForSelector("html")
+
+        const html = await page.content()
+
+        const $ = cheerio.load(html)
+
+        siteContents.clear()
+        // populate new set
+        const paths = await getPathsForSite(site.id)
+        for (path of paths) {
+            $(path.path).each(function (i, el) {
+                siteContents.add($(this).text())
+                feedUpdates.add($(this).text())
+            })
+        }
+        // remove existing
+        const contents = await getContentsForSite(site.id)
+        for (content of contents) {
+            feedUpdates.delete(content.text)
+        }
+
+        // clear old content from db
+        await deleteContentsForSite(site.id)
+        // insert contents 
+        await insertContents(site.id, siteContents)
+    }
+
+    if (feedUpdates.size > 0) {
+        const updates = await getUpdateCount(feedid)
+        const newCount = updates + feedUpdates.size
+        await setUpdateCount(feedid, newCount)
+    }
+}
+// updater
+const updateChecker = async function () {
+
+    const feeds = await getAllFeeds()
+    const idList = []
+    for (feed of feeds) {
+        idList.push(feed.id)
+    }
+    for (feedid of idList) {
+        // curate
+        await curateContentsFeed(feedid)
+        // notify
+        const notify = await getNotificationStatus(feedid)
+        if (notify == 1) {
+            const updateCount = await getUpdateCount(feedid)
+            if (updateCount > 0) {
+                // trigger notification
+                const feed = await getOneFeed(feedid)
+                const topic = await getTopicForFeed(feedid)
+
+                const message = {
                     notification: {
                         title: feed.title,
-                        body: feed.updates.toString() + ' new updates!'
+                        body: updateCount + ' new updates!'
                     },
                     topic: topic
                 };
@@ -211,50 +410,17 @@ if (newSet.length > 0) {
                     .catch((error) => {
                         console.log('Error sending message: ', error);
                     });
-            })
+            }
         }
-    })
-}
-}
-
-/**
- * --------------------------------------------------------------------
- * -----------------  CHECK UPDATES IN INTERVAL -----------------------
- * --------------------------------------------------------------------
- */
-
-var checkForAllUpdates = async function () {
-    // fetch all feeds
-
-    if (isUpdateDone) {
-        console.log("--------------Starting updates-----------------")
-        isUpdateDone = false
-        await getAllFeeds(feeds => {
-            // for each feed id 
-            (async () => {
-                var index = 0
-                var asyncLoop = async function () {
-                    if (index < feeds.length) {
-                        await updateContentsForFeed(feeds[index].id)
-                        console.log("from updateContentsForFeed to getAllFeeds")
-                        index++
-                        setTimeout(asyncLoop, 5)
-                    }
-                }
-                asyncLoop()
-            })()
-        })
     }
-    setTimeout(checkForAllUpdates, 5)
+    setTimeout(updateChecker, 5000)
 }
-
-checkForAllUpdates()
-
+updateChecker()
 // UTILITY
 
 // async function delay(ms) {
-//     // return await for better async stack trace support in case of errors.
-//     return await new Promise(resolve => setTimeout(resolve, ms));
+//   // return  for better  stack trace support in case of errors.
+//   return new Promise(resolve => setTimeout(resolve, ms));
 // }
 
 
@@ -263,37 +429,38 @@ checkForAllUpdates()
 
 
 /**
- * --------------------------------------------------------------------
- * --------------- Listen to port -------------------------------------
- * --------------------------------------------------------------------
- */
+* --------------------------------------------------------------------
+* --------------- Listen to port -------------------------------------
+* --------------------------------------------------------------------
+*/
 
 
 // http
-app.listen(8321);
+// app.listen(8321);
 
 // https
-// https.createServer({
-//     key: fs.readFileSync("/etc/letsencrypt/live/mubdiur.com/privkey.pem"),
-//     cert: fs.readFileSync("/etc/letsencrypt/live/mubdiur.com/fullchain.pem")
-// }, app).listen(8321);
+https.createServer({
+    key: fs.readFileSync("/etc/letsencrypt/live/mubdiur.com/privkey.pem"),
+    cert: fs.readFileSync("/etc/letsencrypt/live/mubdiur.com/fullchain.pem")
+}, app).listen(8321);
 
+// // notification
+//     getOneFeed(site.feedid, feed => {
+//       // get topic for the feed
+//       if (feed.notification == 1) {
+//         getTopicForFeed(feed.id, topic => {
+//           var message = {
+//             notification: {
+//               title: feed.title,
+//               body: feed.updates.toString() + ' new updates!'
+//             },
+//             topic: topic
+//           };
 
-
-
-
-
-
-// comments
-// async function saveText(url) {
-//     page = await getPage()
-//     page.goto(url);
-//     await page.waitForSelector("html")
-
-//     text = await page.evaluate(() => {
-//         var pageText = document.body.innerText
-//         window.stop()
-//         return pageText
-//     })
-//     await fs.writeFile("output.txt", text, (err) => { })
-// }
+//           admin.messaging().send(message)
+//             .catch((error) => {
+//               console.log('Error sending message: ', error);
+//             });
+//         }) // get tiouc
+//       } // if notification
+//     }) // get one feed
