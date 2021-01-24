@@ -196,12 +196,13 @@ async function getNotificationStatus(feedid) {
 
 // ----------- insert functions -------------
 
-async function insertContents(siteid, contents) {
+async function insertContents(siteid, contents, source) {
     var count = 0
     for (content of contents) {
         oneContent = {
             siteid: siteid,
-            text: content
+            text: content,
+            source: source
         }
         await query("INSERT INTO contents SET?", oneContent)
         count++
@@ -359,7 +360,7 @@ async function curateContentsFeed(feedid) {
         // clear old content from db
         await deleteContentsForSite(site.id)
         // insert contents 
-        await insertContents(site.id, siteContents)
+        await insertContents(site.id, siteContents, site.url)
     }
 
     if (feedUpdates.size > 0) {
