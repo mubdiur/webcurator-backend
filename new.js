@@ -93,8 +93,8 @@ async function databaseOperations(request, uid) {
     case "getUpdateCount":
       return await getUpdateCount(request.feedid)
     // network 5
-    case "getTopicForFeed":
-      return await getTopicForFeed(request.feedid)
+    case "getTopic":
+      return String(uid)
     // network 6
     // if the operation is to get the notification status
     case "getNotificationStatus":
@@ -175,11 +175,7 @@ async function getUpdateCount(feedid) {
   const res = await query("SELECT updates FROM feeds where id = ?", [feedid])
   return res[0].updates
 }
-// network 5
-async function getTopicForFeed(feedid) {
-  const res = await query("SELECT name FROM topics where feedid = ?", [feedid])
-  return res[0].name
-}
+
 async function getOneFeed(feedid) {
   const res = await query("SELECT * FROM feeds where id = ?", [feedid])
   return res[0]
@@ -238,14 +234,7 @@ async function insertSites(feedid, siteList) {
   }
   return count
 }
-async function insertTopic(uid, feedid) {
-  var topicname = uid.toString() + feedid.toString()
-  var topic = {
-    feedid: feedid,
-    name: topicname
-  }
-  return await query("INSERT INTO topics SET ?", topic)
-}
+
 // network 7
 async function insertFeed(feed, uid) {
   const feedObject = JSON.parse(feed)
@@ -258,7 +247,6 @@ async function insertFeed(feed, uid) {
   }
   const res = await query("INSERT INTO feeds SET ?", oneFeed)
   await insertSites(res.insertId, feedObject.sites);
-  await insertTopic(uid, res.insertId);
   return res
 }
 // network 8
@@ -383,27 +371,20 @@ const updateChecker = async function () {
 
   const feeds = await getAllFeeds()
   const idList = []
+
   for (feed of feeds) {
     idList.push(feed.id)
-  }
-  for (feedid of idList) {
-    // curate
-    await curateContentsFeed(feedid)
-    // notify
-    const notify = await getNotificationStatus(feedid)
-    if (notify == 1) {
-      const updateCount = await getUpdateCount(feedid)
-      if (updateCount > 0) {
-        // trigger notification
-        const feed = await getOneFeed(feedid)
-        const topic = await getTopicForFeed(feedid)
 
+    // notify
+    if (feed.notification == 1) {
+      if (feed.updates > 0) {
+        // trigger notification
         const message = {
           notification: {
             title: feed.title,
-            body: updateCount + ' new updates!'
+            body: feed.updates + ' new updates!'
           },
-          topic: topic
+          topic: feed.uid
         };
 
         admin.messaging().send(message)
@@ -412,6 +393,11 @@ const updateChecker = async function () {
           });
       }
     }
+  } // for feed of feeds
+
+  for (feedid of idList) {
+    // curate
+    await curateContentsFeed(feedid)
   }
   setTimeout(updateChecker, 5000)
 }
@@ -443,24 +429,3 @@ app.listen(8321);
 //     key: fs.readFileSync("/etc/letsencrypt/live/mubdiur.com/privkey.pem"),
 //     cert: fs.readFileSync("/etc/letsencrypt/live/mubdiur.com/fullchain.pem")
 // }, app).listen(8321);
-
-// // notification
-//     getOneFeed(site.feedid, feed => {
-//       // get topic for the feed
-//       if (feed.notification == 1) {
-//         getTopicForFeed(feed.id, topic => {
-//           var message = {
-//             notification: {
-//               title: feed.title,
-//               body: feed.updates.toString() + ' new updates!'
-//             },
-//             topic: topic
-//           };
-
-//           admin.messaging().send(message)
-//             .catch((error) => {
-//               console.log('Error sending message: ', error);
-//             });
-//         }) // get tiouc
-//       } // if notification
-//     }) // get one feed
