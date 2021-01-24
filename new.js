@@ -12,6 +12,9 @@ const { finished } = require("stream");
 let browserInstance = null
 let pageInstance = null
 
+let notifyFlag = false
+const notifySet = new Set()
+
 async function getPage() {
   if (browserInstance == null)
     browserInstance = await puppeteer.launch();
@@ -56,7 +59,7 @@ app.post('/', (req, res, next) => {
         // based on the client's ID token
         const uid = decodedToken.uid;
         (async () => {
-          const respose = await databaseOperations(req.body, uid)
+          const respose = await databaseOperations(req.body, uid).catch(console.dir)
           res.send(JSON.stringify(respose))
         })()
       })
@@ -323,7 +326,8 @@ async function deleteFeed(feedid) {
  */
 
 async function curateContentsFeed(feedid) {
-
+  notifyFlag = false
+  await setUpdateCount(feedid, 0)
   const page = await getPage()
 
   // get sites from feedid
@@ -336,8 +340,8 @@ async function curateContentsFeed(feedid) {
 
     await page.setCacheEnabled(false)
     page.goto(site.url).catch(console.dir)
-    await page.waitForSelector("html")
-
+    await page.waitForSelector("body")
+    await page.evaluate(() => window.stop());
     const html = await page.content()
 
     const $ = cheerio.load(html)
@@ -364,22 +368,26 @@ async function curateContentsFeed(feedid) {
   }
 
   if (feedUpdates.size > 0) {
+    notifyFlag = true
     const updates = await getUpdateCount(feedid)
     const newCount = updates + feedUpdates.size
     await setUpdateCount(feedid, newCount)
   }
+  if (notifyFlag) notifySet.add(feedid)
   return feedUpdates.size
 }
+
+
+
+
 // updater
 const updateChecker = async function () {
 
   const feeds = await getAllFeeds()
   const idList = []
 
-  for (feed of feeds) {
-    idList.push(feed.id)
-
-    // notify
+  for (feedid of notifySet) {
+    const feed = await getOneFeed(feedid)
     if (feed.notification == 1) {
       if (feed.updates > 0) {
         // trigger notification
@@ -397,21 +405,30 @@ const updateChecker = async function () {
           });
       }
     }
+  }
+
+  notifySet.clear()
+
+  for (feed of feeds) {
+    idList.push(feed.id)
   } // for feed of feeds
 
   for (feedid of idList) {
     // curate
     await curateContentsFeed(feedid)
+    // delay
+    await delay(1000)
   }
   setTimeout(updateChecker, 5000)
 }
-updateChecker()
-// UTILITY
+//updateChecker()
 
-// async function delay(ms) {
-//   // return  for better  stack trace support in case of errors.
-//   return new Promise(resolve => setTimeout(resolve, ms));
-// }
+
+// UTILITY
+async function delay(ms) {
+  // return  for better  stack trace support in case of errors.
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 
 
