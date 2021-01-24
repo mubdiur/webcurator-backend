@@ -198,8 +198,7 @@ async function insertContents(siteid, contents) {
   for (content of contents) {
     oneContent = {
       siteid: siteid,
-      text: content,
-      new: 1
+      text: content
     }
     await query("INSERT INTO contents SET?", oneContent)
     count++
