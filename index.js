@@ -57,7 +57,7 @@ app.post('/', (req, res, next) => {
                 const uid = decodedToken.uid;
                 (async () => {
                     const respose = await databaseOperations(req.body, uid)
-                    res.send(respose)
+                    res.send(JSON.stringify(respose))
                 })()
             })
             .catch((error) => {
@@ -162,16 +162,16 @@ async function getContentsForSite(siteid) {
 }
 // network 3
 async function getContentsForFeed(feedid) {
-    let setOfContent = new Set()
+    let contentList = []
     const sites = await getSitesForFeed(feedid)
 
     for (site of sites) {
         const contents = await getContentsForSite(site.id)
         for (content of contents) {
-            setOfContent.add(content)
+            contentList.push(content)
         }
     }
-    return setOfContent
+    return contentList
 }
 // network 4
 async function getUpdateCount(feedid) {
