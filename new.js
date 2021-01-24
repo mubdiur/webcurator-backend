@@ -124,6 +124,9 @@ async function databaseOperations(request, uid) {
     // network 10.2
     case "markAllRead":
       return await markAllRead(uid)
+    // network 10.3
+    case "curateContentsFeed":
+      return await curateContentsFeed(request.feedid)
     // ------ 4. DELETE operations ---------- //
     // network 11
     case "deleteSite":
@@ -364,6 +367,7 @@ async function curateContentsFeed(feedid) {
     const newCount = updates + feedUpdates.size
     await setUpdateCount(feedid, newCount)
   }
+  return feedUpdates.size
 }
 // updater
 const updateChecker = async function () {
