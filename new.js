@@ -47,6 +47,13 @@ app.use(express.urlencoded({
   extended: true
 })) // for parsing application/x-www-form-urlencoded
 
+async function initPage() {
+  await getPage()
+}
+
+initPage()
+
+// server starts here
 app.post('/', (req, res, next) => {
 
   // Verify ID token
@@ -417,9 +424,9 @@ const updateChecker = async function () {
     // curate
     await curateContentsFeed(feedid)
     // delay
-    await delay(1000)
+    // await delay(1000)
   }
-  setTimeout(updateChecker, 5000)
+  setTimeout(updateChecker, 1000)
 }
 //updateChecker()
 
