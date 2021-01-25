@@ -416,8 +416,10 @@ const updateChecker = async function () {
 
     notifySet.clear()
 
+    // take feed ids that needs to be curated
     for (feed of feeds) {
-        idList.push(feed.id)
+        if (feed.notification == 1)
+            idList.push(feed.id)
     } // for feed of feeds
 
     for (feedid of idList) {
