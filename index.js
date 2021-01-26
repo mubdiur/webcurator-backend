@@ -6,7 +6,6 @@ var mysql = require('mysql');
 const puppeteer = require("puppeteer");
 const cheerio = require("cheerio");
 const util = require('util');
-const { finished } = require("stream");
 
 const SITE_CONTENT_LIMIT = 50
 
@@ -489,12 +488,12 @@ async function delay(ms) {
 
 
 // http
-app.listen(8321);
+// app.listen(8321);
 
 // https
-// https.createServer({
-//     key: fs.readFileSync("/etc/letsencrypt/live/mubdiur.com/privkey.pem"),
-//     cert: fs.readFileSync("/etc/letsencrypt/live/mubdiur.com/fullchain.pem")
-// }, app).listen(8321);
+https.createServer({
+    key: fs.readFileSync("/etc/letsencrypt/live/mubdiur.com/privkey.pem"),
+    cert: fs.readFileSync("/etc/letsencrypt/live/mubdiur.com/fullchain.pem")
+}, app).listen(8321);
 
 // More testing run

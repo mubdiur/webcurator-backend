@@ -6,7 +6,6 @@ var mysql = require('mysql');
 const puppeteer = require("puppeteer");
 const cheerio = require("cheerio");
 const util = require('util');
-const { finished } = require("stream");
 
 const SITE_CONTENT_LIMIT = 50
 
