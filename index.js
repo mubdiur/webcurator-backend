@@ -8,19 +8,29 @@ const cheerio = require("cheerio");
 const util = require('util');
 const { finished } = require("stream");
 
+const SITE_CONTENT_LIMIT = 50
+
+
 // Prepare puppeteer
 let browserInstance = null
-let pageInstance = null
 
 let notifyFlag = false
 const notifySet = new Set()
 
-async function getPage() {
-    if (browserInstance == null)
-        browserInstance = await puppeteer.launch();
-    if (pageInstance == null)
-        pageInstance = await browserInstance.newPage()
-    return pageInstance
+async function getBrowserInstance() {
+    if (browserInstance == null) {
+        console.log("Creating Browser Insance");
+        try {
+            browserInstance = await puppeteer.launch({
+                headless: false,
+                args: ["--disable-setuid-sandbox"],
+                'ignoreHTTPSErrors': true
+            });
+        } catch (err) {
+            console.log("Browser Launch: ", err);
+        }
+    }
+    return browserInstance
 }
 
 // Initialize firebase admin sdk
@@ -48,7 +58,7 @@ app.use(express.urlencoded({
 })) // for parsing application/x-www-form-urlencoded
 
 async function initPage() {
-    await getPage()
+    await getBrowserInstance()
 }
 
 initPage()
@@ -89,6 +99,8 @@ async function databaseOperations(request, uid) {
     console.log("ordered operation: " + request.operation)
     switch (request.operation) {
         // ------ 1. FETCH operations ---------- //
+        case "getHtml":
+            return await getHtml(request.url)
         // network 1
         case "getUserFeeds":
             return await getUserFeeds(uid)
@@ -156,6 +168,32 @@ async function databaseOperations(request, uid) {
 // --------------- DATABASE UNIT FUNCTIONS ---------------------
 
 // ----------- get functions -----------------
+
+// network 0
+async function getHtml(url) {
+    console.log(url)
+    const browser = await getBrowserInstance()
+    const page = await browser.newPage()
+    await page.setCacheEnabled(false)
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+        if (req.resourceType() == 'stylesheet' || req.resourceType() == 'font' || req.resourceType() == 'image') {
+            req.abort();
+        }
+        else {
+            req.continue();
+        }
+    });
+    page.goto(url, { waitUntil: 'load', timeout: 0 }).catch(console.dir)
+    await page.waitForTimeout(3000)
+    await page._client.send("Page.stopLoading")
+    const html = await page.content()
+    await page.close()
+    const htmlResponse = {
+        html: html
+    }
+    return htmlResponse
+}
 // network 1
 async function getUserFeeds(uid) {
     return await query("SELECT * FROM feeds where uid = ?", [uid])
@@ -335,33 +373,32 @@ async function deleteFeed(feedid) {
 async function curateContentsFeed(feedid) {
     notifyFlag = false
     await setUpdateCount(feedid, 0)
-    const page = await getPage()
-
     // get sites from feedid
     const sites = await getSitesForFeed(feedid)
 
     const feedUpdates = new Set()
     const siteContents = new Set()
+    // test
+    console.log("number of sites: " + sites.length)
 
     for (site of sites) {
-
-        await page.setCacheEnabled(false)
-        page.goto(site.url).catch(console.dir)
-        await page.waitForSelector("body")
-        await page.evaluate(() => window.stop());
-        const html = await page.content()
-
-        const $ = cheerio.load(html)
+        const htmlResponse = await getHtml(site.url)
+        const $ = cheerio.load(htmlResponse.html)
 
         siteContents.clear()
+
         // populate new set
         const paths = await getPathsForSite(site.id)
         for (path of paths) {
             $(path.path).each(function (i, el) {
+                if (siteContents.size == SITE_CONTENT_LIMIT)
+                    return true
                 siteContents.add($(this).text())
                 feedUpdates.add($(this).text())
             })
         }
+        // test
+        console.log(siteContents.size)
         // remove existing
         const contents = await getContentsForSite(site.id)
         for (content of contents) {
@@ -452,10 +489,12 @@ async function delay(ms) {
 
 
 // http
-// app.listen(8321);
+app.listen(8321);
 
 // https
-https.createServer({
-    key: fs.readFileSync("/etc/letsencrypt/live/mubdiur.com/privkey.pem"),
-    cert: fs.readFileSync("/etc/letsencrypt/live/mubdiur.com/fullchain.pem")
-}, app).listen(8321);
+// https.createServer({
+//     key: fs.readFileSync("/etc/letsencrypt/live/mubdiur.com/privkey.pem"),
+//     cert: fs.readFileSync("/etc/letsencrypt/live/mubdiur.com/fullchain.pem")
+// }, app).listen(8321);
+
+// More testing run
