@@ -9,19 +9,13 @@ const util = require('util');
 
 const SITE_CONTENT_LIMIT = 50
 
-
 // Prepare puppeteer
 let browserInstance = null
 
-let notifyFlag = false
-const notifySet = new Set()
-
 async function getBrowserInstance() {
     if (browserInstance == null) {
-        console.log("Creating Browser Insance");
         try {
             browserInstance = await puppeteer.launch({
-                headless: false,
                 args: ["--disable-setuid-sandbox"],
                 'ignoreHTTPSErrors': true
             });
@@ -56,12 +50,6 @@ app.use(express.urlencoded({
     extended: true
 })) // for parsing application/x-www-form-urlencoded
 
-async function initPage() {
-    await getBrowserInstance()
-}
-
-initPage()
-
 // server starts here
 app.post('/', (req, res, next) => {
 
@@ -95,7 +83,6 @@ app.post('/', (req, res, next) => {
 
 
 async function databaseOperations(request, uid) {
-    console.log("ordered operation: " + request.operation)
     switch (request.operation) {
         // ------ 1. FETCH operations ---------- //
         case "getHtml":
@@ -170,7 +157,6 @@ async function databaseOperations(request, uid) {
 
 // network 0
 async function getHtml(url) {
-    console.log(url)
     const browser = await getBrowserInstance()
     const page = await browser.newPage()
     await page.setCacheEnabled(false)
@@ -183,8 +169,8 @@ async function getHtml(url) {
             req.continue();
         }
     });
-    page.goto(url, { waitUntil: 'load', timeout: 0 }).catch(console.dir)
-    await page.waitForTimeout(3000)
+    await page.goto(url, { waitUntil: 'load', timeout: 0 }).catch(console.dir)
+    await delay(3000)
     await page._client.send("Page.stopLoading")
     const html = await page.content()
     await page.close()
@@ -223,12 +209,14 @@ async function getContentsForFeed(feedid) {
 // network 4
 async function getUpdateCount(feedid) {
     const res = await query("SELECT updates FROM feeds where id = ?", [feedid])
-    return res[0].updates
+    if (res[0]) return res[0].updates
+    else return 0
 }
 
 async function getOneFeed(feedid) {
     const res = await query("SELECT * FROM feeds where id = ?", [feedid])
-    return res[0]
+    if (res[0]) return res[0]
+    else return 0
 }
 async function getAllFeeds() {
     return await query("SELECT * FROM feeds")
@@ -236,7 +224,8 @@ async function getAllFeeds() {
 // network 6
 async function getNotificationStatus(feedid) {
     const res = await query("SELECT notification FROM feeds where id = ?", [feedid])
-    return res[0].notification
+    if (res[0]) return res[0].notification
+    else return 0
 }
 
 
@@ -297,6 +286,7 @@ async function insertFeed(feed, uid) {
     }
     const res = await query("INSERT INTO feeds SET ?", oneFeed)
     await insertSites(res.insertId, feedObject.sites);
+    await curateContentsFeed(res.insertId)
     return res
 }
 // network 8
@@ -308,6 +298,7 @@ async function insertOneSite(feedid, site) {
     }
     const res = await query("INSERT INTO sites SET?", oneSite)
     await insertPaths(res.insertId, siteObject.paths);
+    await curateContentsFeed(feedid)
     return res
 }
 
@@ -370,54 +361,61 @@ async function deleteFeed(feedid) {
  */
 
 async function curateContentsFeed(feedid) {
-    notifyFlag = false
-    await setUpdateCount(feedid, 0)
-    // get sites from feedid
+
+    let count = 0
+
+    let oldContents = new Set()
+    let newContents = new Set()
+    let siteContents = new Set()
+
+    const contents = await getContentsForFeed(feedid)
+
+    for (content of contents) {
+        oldContents.add(content.text.trim())
+    }
+
     const sites = await getSitesForFeed(feedid)
 
-    const feedUpdates = new Set()
-    const siteContents = new Set()
-    // test
-    console.log("number of sites: " + sites.length)
-
     for (site of sites) {
+
         const htmlResponse = await getHtml(site.url)
-        const $ = cheerio.load(htmlResponse.html)
+        const $ = await cheerio.load(htmlResponse.html)
 
         siteContents.clear()
 
-        // populate new set
         const paths = await getPathsForSite(site.id)
+
         for (path of paths) {
             $(path.path).each(function (i, el) {
-                if (siteContents.size == SITE_CONTENT_LIMIT)
+                if (newContents.size == SITE_CONTENT_LIMIT)
                     return true
-                siteContents.add($(this).text())
-                feedUpdates.add($(this).text())
+                newContents.add($(this).text().trim())
+                siteContents.add($(this).text().trim())
             })
-        }
-        // test
-        console.log(siteContents.size)
-        // remove existing
-        const contents = await getContentsForSite(site.id)
-        for (content of contents) {
-            feedUpdates.delete(content.text)
-        }
-
-        // clear old content from db
+        } // one site is done
+        // populate contents for this site
         await deleteContentsForSite(site.id)
-        // insert contents 
         await insertContents(site.id, siteContents, site.url)
+    } // all sites are done
+
+    if (oldContents.size === 0) {
+        count = 0
+    } else {
+        let updatedSet = new Set(newContents)
+
+        for (item of oldContents) {
+            updatedSet.delete(item)
+        }
+
+        count = updatedSet.size
     }
 
-    if (feedUpdates.size > 0) {
-        notifyFlag = true
-        const updates = await getUpdateCount(feedid)
-        const newCount = updates + feedUpdates.size
-        await setUpdateCount(feedid, newCount)
-    }
-    if (notifyFlag) notifySet.add(feedid)
-    return feedUpdates.size
+    // populate updates field
+    const previousUpdates = await getUpdateCount(feedid)
+    const newVal = previousUpdates + count
+    await setUpdateCount(feedid, newVal)
+
+    return count
 }
 
 
@@ -425,19 +423,23 @@ async function curateContentsFeed(feedid) {
 
 // updater
 const updateChecker = async function () {
-
     const feeds = await getAllFeeds()
-    const idList = []
 
-    for (feedid of notifySet) {
-        const feed = await getOneFeed(feedid)
+    for (feed of feeds) {
+
+        const updateCount = await curateContentsFeed(feed.id)
+
         if (feed.notification == 1) {
-            if (feed.updates > 0) {
+            if (updateCount > 0) {
+                let lastPart = " new updates"
+                if (updateCount === 1) {
+                    lastPart = " new update"
+                }
                 // trigger notification
                 const message = {
                     notification: {
                         title: feed.title,
-                        body: feed.updates + ' new updates!'
+                        body: updateCount + lastPart
                     },
                     topic: feed.uid
                 };
@@ -448,26 +450,14 @@ const updateChecker = async function () {
                     });
             }
         }
-    }
-
-    notifySet.clear()
-
-    // take feed ids that needs to be curated
-    for (feed of feeds) {
-        if (feed.notification == 1)
-            idList.push(feed.id)
     } // for feed of feeds
-
-    for (feedid of idList) {
-        // curate
-        await curateContentsFeed(feedid)
-        // delay
-        // await delay(1000)
-    }
-    setTimeout(updateChecker, 1000)
+    setTimeout(updateChecker, 300)
 }
-//updateChecker()
-
+async function run() {
+    await getBrowserInstance()
+    await updateChecker()
+}
+run().catch(console.dir)
 
 // UTILITY
 async function delay(ms) {
