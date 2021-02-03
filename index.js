@@ -23,12 +23,19 @@ async function getBrowserInstance() {
         try {
             if (machine === 'local') {
                 browserInstance = await puppeteer.launch({
-                    args: [
-                        '--ignore-certificate-errors',
-                        '--no-sandbox',
-                        '--disable-setuid-sandbox',
-                        "--disable-accelerated-2d-canvas",
-                        "--disable-gpu"],
+                    args: ["--headless", "--disable-gpu", "-remote-debugging-address=0.0.0.0", "--no-sandbox", "--disable-breakpad",
+                        "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gl-drawing-for-tests",
+                        "--disable-accelerated-2d-canvas", "--disable-canvas-aa", "--disable-2d-canvas-clip-aa",
+                        "--no-first-run", "--no-zygote", "--single-process", "--blink-settings=imagesEnabled=false",
+                        "--disable-web-security", "--disable-desktop-notifications", "--disable-extensions", "--disable-gpu-driver-bug-workarounds",
+                        "--disable-permissions-api", "--disable-sync", "--autoplay-policy=no-user-gesture-required",
+                        "--hide-scrollbars", "--ignore-certificate-errors", "disabled-by-default-memory-infra"],
+                    // args: [
+                    //     '--ignore-certificate-errors',
+                    //     '--no-sandbox',
+                    //     '--disable-setuid-sandbox',
+                    //     "--disable-accelerated-2d-canvas",
+                    //     "--disable-gpu"],
                     userDataDir: secrets.datadir,
                     ignoreHTTPSErrors: true,
                     headless: true
