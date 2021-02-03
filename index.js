@@ -1,11 +1,18 @@
+const machine = 'local' // local or server
+
 const express = require("express")
 const https = require("https")
-const fs = require('fs');
-var admin = require('firebase-admin');
-var mysql = require('mysql');
-const puppeteer = require("puppeteer");
-const cheerio = require("cheerio");
-const util = require('util');
+const fs = require('fs')
+var admin = require('firebase-admin')
+var mysql = require('mysql')
+const puppeteer = require("puppeteer")
+const cheerio = require("cheerio")
+const util = require('util')
+
+
+let rawData = fs.readFileSync('secrets.json')
+let secrets = JSON.parse(rawData)
+
 
 const SITE_CONTENT_LIMIT = 50
 
@@ -15,10 +22,31 @@ let browserInstance = null
 async function getBrowserInstance() {
     if (browserInstance == null) {
         try {
-            browserInstance = await puppeteer.launch({
-                args: ["--disable-setuid-sandbox"],
-                'ignoreHTTPSErrors': true
-            });
+            if (machine === 'local') {
+                browserInstance = await puppeteer.launch({
+                    args: [
+                        '--ignore-certificate-errors',
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        "--disable-accelerated-2d-canvas",
+                        "--disable-gpu"],
+                    userDataDir: secrets.datadir,
+                    ignoreHTTPSErrors: true,
+                    headless: true
+                })
+            } else if (machine === 'server') {
+                browserInstance = await puppeteer.launch({
+                    args: [
+                        '--ignore-certificate-errors',
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',],
+                    userDataDir: secrets.datadir,
+                    ignoreHTTPSErrors: true,
+                    headless: true
+                })
+            } else {
+                console.log("Please give a valid value to machine")
+            }
         } catch (err) {
             console.log("Browser Launch: ", err);
         }
@@ -35,8 +63,8 @@ admin.initializeApp({
 // Prepare the object for mysql connection
 var con = mysql.createConnection({
     host: "localhost",
-    user: "root",
-    password: "",
+    user: secrets.user,
+    password: secrets.password,
     database: 'webcurator'
 });
 
@@ -171,7 +199,7 @@ async function getHtml(url) {
     });
     page.goto(url, { waitUntil: 'load', timeout: 0 }).catch(console.dir)
     await page.waitForSelector('body')
-    await delay(3000)
+    await delay(1000)
     await page._client.send("Page.stopLoading")
     const html = await page.content()
     await page.close()
@@ -477,14 +505,15 @@ async function delay(ms) {
 * --------------------------------------------------------------------
 */
 
-
-// http
-// app.listen(8321);
-
-// https
-https.createServer({
-    key: fs.readFileSync("/etc/letsencrypt/live/mubdiur.com/privkey.pem"),
-    cert: fs.readFileSync("/etc/letsencrypt/live/mubdiur.com/fullchain.pem")
-}, app).listen(8321);
-
-// More testing run
+if (machine === 'local') {
+    // http
+    app.listen(8321);
+} else if (machine === 'server') {
+    // https
+    https.createServer({
+        key: fs.readFileSync("/etc/letsencrypt/live/mubdiur.com/privkey.pem"),
+        cert: fs.readFileSync("/etc/letsencrypt/live/mubdiur.com/fullchain.pem")
+    }, app).listen(8321)
+} else {
+    console.log("Please give a valid value to machine")
+}

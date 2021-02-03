@@ -27,6 +27,6 @@
     "firebase-admin": "^9.4.2",
     "https": "^1.0.0",
     "mysql": "^2.18.1",
-    "puppeteer": "^5.5.0"
+    "puppeteer": "^6.0.0"
   }
 }
