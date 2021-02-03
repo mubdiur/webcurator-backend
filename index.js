@@ -1,5 +1,3 @@
-const machine = 'local' // local or server
-
 const express = require("express")
 const https = require("https")
 const fs = require('fs')
@@ -13,7 +11,7 @@ const util = require('util')
 let rawData = fs.readFileSync('secrets.json')
 let secrets = JSON.parse(rawData)
 
-
+const machine = secrets.machine
 const SITE_CONTENT_LIMIT = 50
 
 // Prepare puppeteer
@@ -416,7 +414,7 @@ async function curateContentsFeed(feedid) {
 
         for (path of paths) {
             $(path.path).each(function (i, el) {
-                if (newContents.size == SITE_CONTENT_LIMIT)
+                if (siteContents.size == SITE_CONTENT_LIMIT)
                     return true
                 newContents.add($(this).text().trim())
                 siteContents.add($(this).text().trim())
