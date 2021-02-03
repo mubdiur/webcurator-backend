@@ -12,7 +12,8 @@ let rawData = fs.readFileSync('secrets.json')
 let secrets = JSON.parse(rawData)
 
 const machine = secrets.machine
-const SITE_CONTENT_LIMIT = 50
+
+const SITE_CONTENT_LIMIT = 15
 
 // Prepare puppeteer
 let browserInstance = null
