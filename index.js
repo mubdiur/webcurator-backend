@@ -63,9 +63,14 @@ async function getBrowserInstance() {
     return browserInstance
 }
 
+
+
 // Initialize firebase admin sdk
+
+var serviceAccount = require(secrets.serviceacc)
+
 admin.initializeApp({
-    credential: admin.credential.applicationDefault(),
+    credential: admin.credential.cert(serviceAccount),
     databaseURL: "https://webcurator-33fea.firebaseio.com"
 });
 
