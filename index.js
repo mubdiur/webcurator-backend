@@ -213,7 +213,7 @@ async function getHtml(url) {
     });
     page.goto(url, { waitUntil: 'load', timeout: 0 }).catch(console.dir)
     await page.waitForSelector('body')
-    await delay(1000)
+    await delay(2000)
     await page._client.send("Page.stopLoading")
     const html = await page.content()
     await page.close()
