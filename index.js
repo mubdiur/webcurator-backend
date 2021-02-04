@@ -13,7 +13,7 @@ let secrets = JSON.parse(rawData)
 
 const machine = secrets.machine
 
-const SITE_CONTENT_LIMIT = 15
+const SITE_CONTENT_LIMIT = 30
 
 // Prepare puppeteer
 let browserInstance = null
@@ -288,8 +288,14 @@ async function insertContents(siteid, contents, source) {
     }
     return count
 }
-
-
+async function insertContentObject(site, contentObject) {
+    oneContent = {
+        siteid: site.id,
+        text: contentObject.text,
+        source: site.url,
+        new: contentObject.new
+    }
+}
 async function insertPaths(siteid, pathList) {
     var count = 0
     for (path of pathList) {
@@ -364,7 +370,12 @@ async function modifyFeed(feedid, title, description) {
 
 // network 10.1
 async function markFeedRead(feedid) {
-    return await query("UPDATE feeds SET updates = ? where id = ?", [0, feedid])
+    await query("UPDATE feeds SET updates = ? where id = ?", [0, feedid])
+    const sites = await getSitesForFeed(feedid)
+    for (site of sites) {
+        await query("UPDATE contents SET new = ? where siteid = ?", [0, site.id])
+    }
+    return true
 }
 
 // network 10.2
@@ -405,60 +416,52 @@ async function deleteFeed(feedid) {
 
 async function curateContentsFeed(feedid) {
 
-    let count = 0
+    var updateCount = 0
 
-    let oldContents = new Set()
-    let newContents = new Set()
-    let siteContents = new Set()
-
-    const contents = await getContentsForFeed(feedid)
-
-    for (content of contents) {
-        oldContents.add(content.text.trim())
-    }
 
     const sites = await getSitesForFeed(feedid)
 
     for (site of sites) {
 
-        const htmlResponse = await getHtml(site.url)
-        const $ = await cheerio.load(htmlResponse.html)
+        const oldContents = await getContentsForSite(site.id)
+        const curatedContents = new Map()
 
-        siteContents.clear()
+        const html = await getHtml(site.url)
+        const $ = await cheerio.load(html)
 
         const paths = await getPathsForSite(site.id)
 
         for (path of paths) {
-            $(path.path).each(function (i, el) {
-                if (siteContents.size == SITE_CONTENT_LIMIT)
-                    return true
-                newContents.add($(this).text().trim())
-                siteContents.add($(this).text().trim())
-            })
-        } // one site is done
-        // populate contents for this site
-        await deleteContentsForSite(site.id)
-        await insertContents(site.id, siteContents, site.url)
-    } // all sites are done
-
-    if (oldContents.size === 0) {
-        count = 0
-    } else {
-        let updatedSet = new Set(newContents)
-
-        for (item of oldContents) {
-            updatedSet.delete(item)
+            var x = 0
+            $(path.path).each(
+                function (index, element) {
+                    if (x == SITE_CONTENT_LIMIT) return
+                    curatedContents.set($(this).text().trim(), 1)
+                    x++
+                }
+            )
         }
 
-        count = updatedSet.size
+        await deleteContentsForSite(site.id)
+        const seenContents = oldContents.filter(content => content.new == 0)
+        for (content of seenContents) {
+            curatedContents.set(content.text.trim(), 0)
+        }
+        for (let [key, value] of curatedContents) {
+            const contentObj = {
+                text: key,
+                new: value
+            }
+            await insertContentObject(site, contentObj)
+        }
+    } // all sites done
+    const allContents = await getContentsForFeed(feedid)
+    for (content of allContents) {
+        if (content.new === 1) {
+            updateCount++
+        }
     }
-
-    // populate updates field
-    const previousUpdates = await getUpdateCount(feedid)
-    const newVal = previousUpdates + count
-    await setUpdateCount(feedid, newVal)
-
-    return count
+    return updateCount
 }
 
 
